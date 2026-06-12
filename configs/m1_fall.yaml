@@ -1,0 +1,75 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SafeWave-AI  M1 (fall detection)  —  training config
+# Hard contracts (NEVER change) are flagged. Everything else is tunable.
+# ─────────────────────────────────────────────────────────────────────────────
+
+tensor:
+  # HARD CONTRACT — rp5 db_spec_v2 §7. Input is (B,1,64,100): 64 subcarrier
+  # channels × 100 frames (1 s @ 100 Hz). Do NOT use the legacy 192 (PulseFi).
+  n_channels: 64          # FIXED
+  window_frames: 100      # FIXED (1 s @ sample_rate_hz)
+  sample_rate_hz: 100     # FIXED — frame cadence of the raw stream
+
+  # Guard / null subcarriers: always 0, kept in-place (shape stays 64, not 52).
+  guard_indices: [0, 1, 2, 3, 4, 5, 32, 59, 60, 61, 62, 63]
+
+normalize:
+  # ESP does per-frame peak normalization (max=1.0) before data_raw reaches the
+  # model, so training data is normalized the same way for parity.
+  # Per frame: divide the 64-vector by max(|frame|) over non-guard channels.
+  # Absolute-amplitude reconstruction is FORBIDDEN — only relative channel
+  # pattern + temporal change is learned.
+  mode: per_frame_peak    # {per_frame_peak}
+  eps: 1.0e-6             # guards against all-zero frames
+
+window:
+  stride_frames: 25       # 75% overlap between consecutive windows (dense coverage)
+  # Optional denser sampling around fall instants (rare class). null → use stride_frames.
+  fall_stride_frames: 5
+  drop_last_partial: true # discard a trailing window shorter than window_frames
+
+label:
+  task: binary            # {binary, multiclass} — binary (fall / non-fall) recommended
+  fall_halfwidth_ms: 1000 # positive interval = [t_fall ± this]  (±1 s)
+  fall_pos_frac: 0.5      # window is positive if ≥ this fraction of its frames are in a positive interval
+
+split:
+  by: session             # split unit = session/file (prevents same-session leakage)
+  val_frac: 0.2           # of sessions without an explicit `split` override
+  test_frac: 0.0
+  seed: 1337
+
+imbalance:
+  # Fall windows are rare. Pick ONE strategy (loader/trainer honor this).
+  strategy: weighted_sampler   # {weighted_sampler, focal_loss, none}
+  focal_gamma: 2.0             # used only when strategy == focal_loss
+  pos_weight: null             # BCEWithLogits pos_weight; null → auto from class counts
+
+model:
+  # CNN-GRU. Small enough for RPi5 CPU inference (target < a few ms).
+  conv_channels: [16, 32, 64]
+  gru_hidden: 64
+  gru_layers: 1
+  dropout: 0.3
+
+train:
+  epochs: 40
+  batch_size: 64
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  early_stop_patience: 8       # on val fall-recall (primary metric)
+  primary_metric: fall_recall  # missed falls are the costly error
+  report_metrics: [fall_recall, pr_auc, precision, f1]
+
+paths:
+  raw_dir: data/raw
+  labels_csv: data/labels.csv
+  cache_dir: data/windows_cache
+  out_dir: runs
+
+export:
+  # HARD CONTRACT — rp5 ONNX I/O contract.
+  opset: 17
+  input_name: csi_data         # rp5 _infer_onnx feed name
+  output_name: fall_logit      # pre-sigmoid logit, shape (B,1); rp5 else-branch reads reshape(-1)[0]
+  onnx_path: runs/m1_wifi_pose.onnx

@@ -1,0 +1,13 @@
+# Core training stack — pinned to majors known to export clean opset-17 ONNX.
+torch>=2.1,<3.0
+numpy>=1.24,<2.0
+pandas>=2.0,<3.0
+pyyaml>=6.0
+scikit-learn>=1.3        # PR-AUC, recall, session-aware split helpers
+
+# Export / validation
+onnx>=1.15
+onnxruntime>=1.17        # parity check: torch logits vs onnx logits
+
+# Optional (dev)
+tqdm>=4.66

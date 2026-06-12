@@ -1,0 +1,6 @@
+csv_file,session_label,fall_ts_ms,split,notes
+csi_20260101_1430.csv,NORMAL,,,sitting/standing/walking — whole session label 0
+csi_20260101_1500.csv,NORMAL,,,kitchen activity — label 0
+csi_20260102_1010.csv,FALL,1735790412345,,single scripted fall on mat; ±1s = label 1
+csi_20260102_1042.csv,FALL,1735792330100;1735792355800,,two falls in one session (semicolon-separated ts_ms)
+csi_20260103_0930.csv,NORMAL,,val,held-out session for validation (split override)
