@@ -155,9 +155,12 @@ def train(config_path: str) -> dict:
 
         m = evaluate(model, val_dl, device)
         recall, pr_auc = m["fall_recall"], m["pr_auc"]
-        # selection: maximize recall; fall back to -train_loss when there is no val set
-        score = recall if np.isfinite(recall) else -train_loss
-        tie = pr_auc if np.isfinite(pr_auc) else float("-inf")
+        # selection: cfg.train.primary_metric (HIGHER better); -train_loss when no val set
+        primary = m.get(cfg.train.primary_metric, float("nan"))
+        score = primary if np.isfinite(primary) else -train_loss
+        tie_key = "fall_recall" if cfg.train.primary_metric == "pr_auc" else "pr_auc"
+        tie_val = m.get(tie_key, float("nan"))
+        tie = tie_val if np.isfinite(tie_val) else float("-inf")
         history.append({"epoch": epoch, "train_loss": train_loss, **m})
         print(f"[ep {epoch:3d}] train_loss={train_loss:.4f} | val recall={recall:.3f} "
               f"prec={m['precision']:.3f} f1={m['f1']:.3f} pr_auc={pr_auc:.3f}")
