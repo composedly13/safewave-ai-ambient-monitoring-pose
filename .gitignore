@@ -29,8 +29,11 @@ checkpoints/
 
 # 학습 산출물(.onnx)은 원칙적으로 제외하되,
 # 팀 병합에 제출하는 배포용 가중치만 models/ 아래에서 예외로 추적한다.
+# models/ 바로 아래와 그 하위 디렉터리를 모두 포함해야 한다
+# (!models/*.onnx 만으로는 models/integration/ 이 걸린다).
 *.onnx
 !models/*.onnx
+!models/**/*.onnx
 
 !data/labels.csv
 
