@@ -11,6 +11,8 @@ env/
 # Data — raw CSI CSVs are large / private; only labels.csv is tracked
 data/raw/*
 !data/raw/.gitkeep
+data/raw_main/
+data/csi_main/
 data/windows_cache/
 *.npy
 *.npz
@@ -18,11 +20,18 @@ data/windows_cache/
 # Artifacts
 runs/*
 !runs/.gitkeep
+# 폴더 설명은 추적한다 (아티팩트 자체는 계속 제외)
+!runs/README.md
 checkpoints/
 *.pt
 *.pth
 *.ckpt
+
+# 학습 산출물(.onnx)은 원칙적으로 제외하되,
+# 팀 병합에 제출하는 배포용 가중치만 models/ 아래에서 예외로 추적한다.
 *.onnx
+!models/*.onnx
+
 !data/labels.csv
 
 # OS / editor

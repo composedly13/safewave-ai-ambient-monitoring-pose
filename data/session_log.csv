@@ -1,0 +1,1 @@
+session_id,csv_prefix,date,layout_id,subject_id,class,scenario,fall_dir,start_pose,spot_x_m,spot_y_m,n_events,occlusion_by_node,operator,lag_ms,verify_pass,notes

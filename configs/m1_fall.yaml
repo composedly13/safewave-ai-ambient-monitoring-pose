@@ -4,11 +4,13 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 tensor:
-  # HARD CONTRACT — rp5 db_spec_v2 §7. Input is (B,1,64,100): 64 subcarrier
-  # channels × 100 frames (1 s @ 100 Hz). Do NOT use the legacy 192 (PulseFi).
-  n_channels: 64          # FIXED
+  # HARD CONTRACT — rp5 db_spec_v2 §7. Input is (B,5,64,100): 5 nodes stacked on
+  # the conv input-channel axis × 64 subcarriers × 100 frames (1 s @ 100 Hz).
+  # Nodes are NEVER concatenated on the subcarrier axis (legacy 192 forbidden).
+  n_channels: 64          # FIXED — subcarriers stay 64
   window_frames: 100      # FIXED (1 s @ sample_rate_hz)
   sample_rate_hz: 100     # FIXED — frame cadence of the raw stream
+  n_nodes: 3              # node axis = conv input channels (early fusion)
 
   # Guard / null subcarriers: always 0, kept in-place (shape stays 64, not 52).
   guard_indices: [0, 1, 2, 3, 4, 5, 32, 59, 60, 61, 62, 63]
@@ -23,9 +25,9 @@ normalize:
   eps: 1.0e-6             # guards against all-zero frames
 
 window:
-  stride_frames: 25       # 75% overlap between consecutive windows (dense coverage)
+  stride_frames: 50       # 75% overlap between consecutive windows (dense coverage)
   # Optional denser sampling around fall instants (rare class). null → use stride_frames.
-  fall_stride_frames: 5
+  fall_stride_frames: 20
   drop_last_partial: true # discard a trailing window shorter than window_frames
 
 label:
@@ -50,20 +52,25 @@ model:
   conv_channels: [16, 32, 64]
   gru_hidden: 64
   gru_layers: 1
-  dropout: 0.3
+  dropout: 0.5
 
 train:
   epochs: 40
   batch_size: 64
-  lr: 1.0e-3
+  lr: 3.0e-4
   weight_decay: 1.0e-4
   early_stop_patience: 8       # on val fall-recall (primary metric)
-  primary_metric: fall_recall  # missed falls are the costly error
+  primary_metric: pr_auc  # missed falls are the costly error
   report_metrics: [fall_recall, pr_auc, precision, f1]
 
+# NO pretrain block — the 5-node model trains from scratch.
+# runs/best_B2_final.pt is single-node (conv1 expects 1 input channel); loading it
+# into a 5-channel model fails strict=True by design. Do NOT re-add it here.
+# (`--init-ckpt PATH` remains available once a 5-node checkpoint exists.)
+
 paths:
-  raw_dir: data/raw
-  labels_csv: data/labels.csv
+  raw_dir: data/raw_main
+  labels_csv: data/labels_split.csv
   cache_dir: data/windows_cache
   out_dir: runs
 

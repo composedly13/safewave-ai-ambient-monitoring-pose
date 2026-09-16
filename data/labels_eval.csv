@@ -1,0 +1,14 @@
+csv_file,session_label,fall_ts_ms,split,source,notes
+csi_20260916_1331_hardneg_chair.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1332_hardneg_chair.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1333_hardneg_chair.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1334_hardneg_floor.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1335_hardneg_floor.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1336_hardneg_liedown.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1337_hardneg_liedown.csv,NORMAL,,val,self,eval;hardneg;unseen-by-training
+csi_20260916_1350_normal_active.csv,NORMAL,,val,self,eval;daily;was-val
+csi_20260916_1356_normal_empty.csv,NORMAL,,val,self,eval;daily;was-val
+csi_20260916_1358_normal_empty.csv,NORMAL,,val,self,eval;daily;was-val
+csi_20260916_1327_fall.csv,FALL,2826426760;2826431938;2826442343;2826447910;2826452978;2826456129;2826460832;2826466011;2826472545;2826478966;2826484225,val,self,eval;fall;was-val
+csi_20260916_1340_fall.csv,FALL,2827207169;2827209108;2827211695;2827214930,val,self,eval;fall;was-val
+csi_20260916_1345_fall_longlie.csv,FALL,2827508335;2827522074;2827537106;2827553320,val,self,eval;fall;was-val

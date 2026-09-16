@@ -1,0 +1,9 @@
+csv_file,session_label,fall_ts_ms,split,source,notes
+csi_20260611_1708.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1709.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1710.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1711.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1712.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1715.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1750.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님
+csi_20260611_1755.csv,NORMAL,,,self,self;단일노드 시절(2026-06-11) 수집. 5노드 로더 대상 아님

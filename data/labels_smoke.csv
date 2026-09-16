@@ -1,0 +1,4 @@
+csv_file,session_label,fall_ts_ms,split,source,notes
+csi_20260916_1306.csv,NORMAL,,,self,self
+csi_20260916_1307.csv,NORMAL,,,self,self
+csi_20260916_1308.csv,FALL,2825305408;2825308440;2825312523,,self,self;3fall

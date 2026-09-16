@@ -16,13 +16,134 @@ from typing import Dict
 
 import numpy as np
 
-from .config import Config, load_config
+from .config import Config, PretrainCfg, load_config
 from .dataset import make_dataloaders
 
 
 def _torch():
     import torch  # local import keeps the module importable without torch
     return torch
+
+
+# ── pretrained warm start ────────────────────────────────────────────────────
+
+BACKBONE_ATTR = "convs"          # M1FallNet.convs — the Conv2d stack
+
+
+def _load_blob(ckpt_path: str):
+    """torch.load across versions (weights_only default flipped in torch 2.6)."""
+    torch = _torch()
+    try:
+        return torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    except TypeError:
+        return torch.load(ckpt_path, map_location="cpu")
+
+
+def load_pretrained(model, ckpt_path: str, mode: str = "full") -> dict:
+    """Restore weights from `ckpt_path` into `model`. ALWAYS strict=True.
+
+    strict=False would happily accept a checkpoint whose keys no longer match and
+    leave the model half-random, which reads as "pretraining didn't help" instead
+    of as the bug it is. Any mismatch must be loud. Returns a dict of load stats.
+    """
+    path = Path(ckpt_path)
+    if not path.exists():
+        raise RuntimeError(
+            f"[pretrain] checkpoint not found: {ckpt_path} "
+            "(runs/ is git-ignored — copy the .pt in, or drop the pretrain block / --init-ckpt)"
+        )
+
+    blob = _load_blob(str(path))
+    if isinstance(blob, dict) and "state_dict" in blob:
+        state_dict, meta = blob["state_dict"], blob
+    else:
+        state_dict, meta = blob, {}
+
+    if not isinstance(state_dict, dict) or len(state_dict) == 0:
+        raise RuntimeError(f"[pretrain] {ckpt_path} holds no state_dict keys — nothing to load")
+
+    total = len(state_dict)
+    if mode == "backbone":
+        prefix = BACKBONE_ATTR + "."
+        sub = {k[len(prefix):]: v for k, v in state_dict.items() if k.startswith(prefix)}
+        if not sub:
+            raise RuntimeError(
+                f"[pretrain] {ckpt_path} has 0 '{prefix}*' keys — cannot load a backbone from it"
+            )
+        getattr(model, BACKBONE_ATTR).load_state_dict(sub, strict=True)
+        loaded = len(sub)
+    else:
+        model.load_state_dict(state_dict, strict=True)
+        loaded = total
+
+    if loaded == 0:  # unreachable via strict=True, kept as an explicit floor
+        raise RuntimeError(f"[pretrain] 0 keys loaded from {ckpt_path}")
+
+    metrics = meta.get("metrics") or {}
+    parts = [f"[pretrain] {ckpt_path}", f"keys {loaded}/{total}"]
+    if mode != "full":
+        parts[-1] += f" ({mode})"
+    if meta.get("epoch") is not None:
+        parts.append(f"epoch {meta['epoch']}")
+    if isinstance(metrics, dict) and metrics.get("pr_auc") is not None:
+        parts.append(f"pr_auc {float(metrics['pr_auc']):.4f}")
+    print(" | ".join(parts))
+
+    return {"loaded": loaded, "total": total, "mode": mode,
+            "epoch": meta.get("epoch"), "metrics": metrics if isinstance(metrics, dict) else {}}
+
+
+def _backbone_params(model):
+    return list(getattr(model, BACKBONE_ATTR).parameters())
+
+
+def set_backbone_trainable(model, trainable: bool) -> None:
+    for p in _backbone_params(model):
+        p.requires_grad = trainable
+
+
+def build_optimizer(model, cfg: Config, backbone_lr_mult: float = 1.0, freeze_backbone: bool = False):
+    """Adam with an explicit backbone group so its lr can differ from the head's.
+
+    While frozen the backbone group is omitted entirely (not merely zero-lr), so the
+    printed group list is an honest picture of what is actually being updated.
+    """
+    torch = _torch()
+    backbone = _backbone_params(model)
+    backbone_ids = {id(p) for p in backbone}
+    head = [p for p in model.parameters() if id(p) not in backbone_ids]
+
+    lr = float(cfg.train.lr)
+    groups = []
+    if not freeze_backbone:
+        groups.append({"params": backbone, "lr": lr * float(backbone_lr_mult), "name": "backbone"})
+    groups.append({"params": head, "lr": lr, "name": "head"})
+
+    opt = torch.optim.Adam(groups, lr=lr, weight_decay=cfg.train.weight_decay)
+    _log_param_groups(opt, frozen_n=len(backbone) if freeze_backbone else 0)
+    return opt
+
+
+def _log_param_groups(opt, frozen_n: int = 0) -> None:
+    desc = ", ".join(
+        f"{g.get('name', f'g{i}')}: {sum(p.numel() for p in g['params']):,}p lr={g['lr']:.1e}"
+        for i, g in enumerate(opt.param_groups)
+    )
+    tail = f" | frozen: backbone {frozen_n} tensors (excluded from optimizer)" if frozen_n else ""
+    print(f"[optim] param groups -> {desc}{tail}")
+
+
+def resolve_pretrain(cfg: Config, init_ckpt: str | None) -> PretrainCfg | None:
+    """CLI --init-ckpt wins over the config block; it reuses the block's knobs if present."""
+    if init_ckpt:
+        base = cfg.pretrain
+        return PretrainCfg(
+            ckpt=init_ckpt,
+            load=base.load if base else "full",
+            freeze_epochs=base.freeze_epochs if base else 0,
+            backbone_lr_mult=base.backbone_lr_mult if base else 1.0,
+        )
+    return cfg.pretrain
 
 
 # ── loss (binary) ────────────────────────────────────────────────────────────
@@ -105,10 +226,13 @@ def evaluate(model, dl, device="cpu") -> Dict[str, float]:
 
 # ── train ────────────────────────────────────────────────────────────────────
 
-def train(config_path: str) -> dict:
+def train(config_path: str, init_ckpt: str | None = None,
+          ckpt_out: str | None = None) -> dict:
     cfg = load_config(config_path)
     torch = _torch()
     from .model import build_model
+
+    pre = resolve_pretrain(cfg, init_ckpt)
 
     train_dl, val_dl = make_dataloaders(cfg)
     ytr = np.asarray(train_dl.dataset.y)
@@ -124,13 +248,39 @@ def train(config_path: str) -> dict:
     else:
         print("[device] cpu (cuda not available)")
 
-    model = build_model(cfg.model).to(device)
-    opt = torch.optim.Adam(model.parameters(), lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
+    model = build_model(cfg.model, cfg.tensor.n_channels, cfg.tensor.window_frames,
+                        cfg.tensor.n_nodes).to(device)
+
+    # Warm start: load BEFORE the optimizer is built so the freeze decision below
+    # and the optimizer's param groups describe the same model.
+    pretrain_info = None
+    if pre is not None:
+        pretrain_info = load_pretrained(model, pre.ckpt, mode=pre.load)
+        if init_ckpt:
+            print("[pretrain] source: --init-ckpt (CLI overrides config pretrain block)")
+
+    freeze_epochs = int(pre.freeze_epochs) if pre is not None else 0
+    backbone_lr_mult = float(pre.backbone_lr_mult) if pre is not None else 1.0
+    frozen = freeze_epochs > 0
+    if frozen:
+        set_backbone_trainable(model, False)
+        print(f"[pretrain] backbone frozen for the first {freeze_epochs} epoch(s) "
+              f"(GRU + head only); thaw at epoch {freeze_epochs + 1}")
+
+    opt = build_optimizer(model, cfg, backbone_lr_mult=backbone_lr_mult, freeze_backbone=frozen)
     loss_fn = make_loss_fn(cfg, ytr, device)
 
     out_dir = Path(cfg.paths.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    ckpt_path = out_dir / "best.pt"
+    # 기본은 best.pt. --ckpt-out 을 주면 그 경로에 저장한다 — 기존 체크포인트를
+    # 덮어쓰지 않고 다른 조건의 학습을 나란히 남길 때 쓴다.
+    ckpt_path = Path(ckpt_out) if ckpt_out else (out_dir / "best.pt")
+    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+    # 요약도 체크포인트 이름을 따라간다. 안 그러면 train_summary.json 이 덮인다.
+    summary_path = (ckpt_path.with_name(ckpt_path.stem + "_summary.json")
+                    if ckpt_out else out_dir / "train_summary.json")
+    print(f"[out] checkpoint -> {ckpt_path}")
+    print(f"[out] summary    -> {summary_path}")
 
     best = float("-inf")        # M1 MAXIMIZES fall_recall (opposite of M2's MAE minimization)
     best_pr = float("-inf")     # tie-break: prefer higher PR-AUC at equal recall
@@ -139,6 +289,16 @@ def train(config_path: str) -> dict:
     history = []
 
     for epoch in range(1, cfg.train.epochs + 1):
+        if frozen and epoch > freeze_epochs:
+            # Thaw: re-grant grads, then REBUILD the optimizer so the backbone gets its
+            # own param group at the reduced lr. Adam state for the head is dropped,
+            # which is the intended clean break at the fine-tuning boundary.
+            set_backbone_trainable(model, True)
+            frozen = False
+            print(f"[pretrain] epoch {epoch}: 백본 해동, "
+                  f"backbone_lr={cfg.train.lr * backbone_lr_mult:.1e}")
+            opt = build_optimizer(model, cfg, backbone_lr_mult=backbone_lr_mult, freeze_backbone=False)
+
         model.train()
         running = 0.0
         n = 0
@@ -181,7 +341,15 @@ def train(config_path: str) -> dict:
 
     summary = {"best_epoch": best_epoch, "best_score": best, "primary_metric": cfg.train.primary_metric,
                "checkpoint": str(ckpt_path), "history": history}
-    (out_dir / "train_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    if pretrain_info is not None:
+        summary["pretrain"] = {
+            "ckpt": pre.ckpt, "load": pre.load, "freeze_epochs": freeze_epochs,
+            "backbone_lr_mult": backbone_lr_mult,
+            "keys_loaded": pretrain_info["loaded"], "keys_total": pretrain_info["total"],
+            "source_epoch": pretrain_info["epoch"],
+            "source": "cli" if init_ckpt else "config",
+        }
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"[done] best ep {best_epoch} {cfg.train.primary_metric}={best:.3f} -> {ckpt_path}")
     return summary
 
@@ -189,4 +357,10 @@ def train(config_path: str) -> dict:
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
     p.add_argument("--config", default="configs/m1_fall.yaml")
-    train(p.parse_args().config)
+    p.add_argument("--init-ckpt", default=None,
+                   help="warm start from this checkpoint (overrides the config's pretrain.ckpt)")
+    p.add_argument("--ckpt-out", default=None,
+                   help="best 체크포인트를 저장할 경로 (기본: {paths.out_dir}/best.pt). "
+                        "기존 체크포인트를 덮지 않으려면 지정할 것. 요약 json 도 같은 이름을 따른다.")
+    a = p.parse_args()
+    train(a.config, init_ckpt=a.init_ckpt, ckpt_out=a.ckpt_out)

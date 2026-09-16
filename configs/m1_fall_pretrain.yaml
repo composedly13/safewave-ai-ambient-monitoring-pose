@@ -1,14 +1,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
-# SafeWave-AI  M1 (fall detection)  —  training config
+# SafeWave-AI  M1 (fall detection)  —  사전학습 config
+#
+# ⚠️ 레거시 단일노드(n_nodes = 1) 설정이다. 본 학습용은 configs/m1_fall.yaml
+#    (n_nodes: 5). 이 파일은 공개 데이터(csibench) 사전학습과
+#    runs/legacy_singlenode/ 아티팩트의 재현용으로만 남아 있다.
+#    5노드 학습에 쓰지 마라 — 입력이 (B,1,64,100)이라 계약이 다르다.
+#
 # Hard contracts (NEVER change) are flagged. Everything else is tunable.
 # ─────────────────────────────────────────────────────────────────────────────
 
 tensor:
-  # HARD CONTRACT — rp5 db_spec_v2 §7. Input is (B,1,64,100): 64 subcarrier
-  # channels × 100 frames (1 s @ 100 Hz). Do NOT use the legacy 192 (PulseFi).
+  # 이 설정의 입력은 (B,1,64,100) — 노드축 1 (n_nodes 미지정 = 기본 1).
+  # 서브캐리어 64 × 100프레임 (1 s @ 100 Hz)은 5노드와 동일한 불변 계약.
+  # 레거시 192(PulseFi) concat은 어느 설정에서도 금지.
   n_channels: 64          # FIXED
   window_frames: 100      # FIXED (1 s @ sample_rate_hz)
   sample_rate_hz: 100     # FIXED — frame cadence of the raw stream
+  n_nodes: 1              # 레거시 단일노드 (본 학습은 m1_fall.yaml의 5)
 
   # Guard / null subcarriers: always 0, kept in-place (shape stays 64, not 52).
   guard_indices: [0, 1, 2, 3, 4, 5, 32, 59, 60, 61, 62, 63]
