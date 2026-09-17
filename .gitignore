@@ -37,6 +37,10 @@ checkpoints/
 
 !data/labels.csv
 
+# 채팅으로 전달한 문서가 저장되는 폴더 — 레포 문서가 아니다.
+# 초안과 확정본이 섞여 중복되므로 추적하지 않는다.
+Claude outputs/
+
 # OS / editor
 .DS_Store
 .idea/
